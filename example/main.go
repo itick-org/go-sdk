@@ -5,7 +5,7 @@ import (
 	"log"
 	"time"
 
-	"io.github.itick.sdk"
+	"github.com/itick-org/go-sdk/sdk"
 )
 
 func main() {
@@ -60,7 +60,7 @@ func main() {
 		defer client.CloseWebSocket()
 
 		// 发送订阅消息
-		subscribeMsg := []byte(`{"action": "subscribe", "codes": ["EURUSD"]}`)
+		subscribeMsg := []byte(`{"ac": "subscribe", "params": "EURUSD$gb","types":"quote"}`)
 		err = client.SendWebSocketMessage(subscribeMsg)
 		if err != nil {
 			log.Printf("SendWebSocketMessage error: %v", err)

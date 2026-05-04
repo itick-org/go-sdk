@@ -15,7 +15,7 @@ Go 语言版本的 iTick API SDK，提供基础、股票、指数、期货、基
 ## 安装
 
 ```bash
-go get io.github.itick/sdk
+go get github.com/itick-org/go-sdk@latest
 ```
 
 ## 快速开始
@@ -26,7 +26,7 @@ go get io.github.itick/sdk
 package main
 
 import (
-    "io.github.itick/sdk"
+    "github.com/itick-org/go-sdk/sdk"
 )
 
 func main() {
@@ -154,7 +154,7 @@ if err != nil {
 defer client.CloseWebSocket()
 
 // 发送订阅消息
-subscribeMsg := []byte(`{"action": "subscribe", "codes": ["EURUSD"]}`)
+subscribeMsg := []byte(`{"ac": "subscribe", "params": "EURUSD$gb","types":"quote"}`)
 err = client.SendWebSocketMessage(subscribeMsg)
 if err != nil {
     log.Fatal(err)
@@ -305,7 +305,7 @@ import (
     "log"
     "time"
 
-    "io.github.itick/sdk"
+    "github.com/itick-org/go-sdk/sdk"
 )
 
 func main() {
@@ -338,7 +338,7 @@ func main() {
     defer client.CloseWebSocket()
 
     // 发送订阅消息
-    subscribeMsg := []byte(`{"action": "subscribe", "codes": ["EURUSD"]}`)
+    subscribeMsg := []byte(`{"ac": "subscribe", "params": "EURUSD$gb","types":"quote"}`)
     err = client.SendWebSocketMessage(subscribeMsg)
     if err != nil {
         log.Fatal(err)

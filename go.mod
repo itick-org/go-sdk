@@ -1,4 +1,4 @@
-module io.github.itick.sdk
+module github.com/itick-org/go-sdk
 
 go 1.20
 
