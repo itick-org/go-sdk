@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -303,8 +304,8 @@ func (c *Client) GetStockSplit(region, code string) (interface{}, error) {
 }
 
 // GetStockTick 获取股票实时成交
-func (c *Client) GetStockTick(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetStockTick(region, code string) (Tick, error) {
+	result := Tick{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -314,8 +315,8 @@ func (c *Client) GetStockTick(region, code string) (interface{}, error) {
 }
 
 // GetStockQuote 获取股票实时报价
-func (c *Client) GetStockQuote(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetStockQuote(region, code string) (Quote, error) {
+	result := Quote{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -325,8 +326,8 @@ func (c *Client) GetStockQuote(region, code string) (interface{}, error) {
 }
 
 // GetStockDepth 获取股票实时盘口
-func (c *Client) GetStockDepth(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetStockDepth(region, code string) (Depth, error) {
+	result := Depth{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -336,8 +337,8 @@ func (c *Client) GetStockDepth(region, code string) (interface{}, error) {
 }
 
 // GetStockKline 获取股票历史K线
-func (c *Client) GetStockKline(region, code string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetStockKline(region, code string, kType, limit int, end *int64) ([]Kline, error) {
+	result := []Kline{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -352,44 +353,44 @@ func (c *Client) GetStockKline(region, code string, kType, limit int, end *int64
 }
 
 // GetStockTicks 获取股票批量实时成交
-func (c *Client) GetStockTicks(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetStockTicks(region string, codes []string) (map[string]Tick, error) {
+	result := map[string]Tick{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/stock/ticks", params, &result)
 	return result, err
 }
 
 // GetStockQuotes 获取股票批量实时报价
-func (c *Client) GetStockQuotes(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetStockQuotes(region string, codes []string) (map[string]Quote, error) {
+	result := map[string]Quote{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/stock/quotes", params, &result)
 	return result, err
 }
 
 // GetStockDepths 获取股票批量实时盘口
-func (c *Client) GetStockDepths(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetStockDepths(region string, codes []string) (map[string]Depth, error) {
+	result := map[string]Depth{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/stock/depths", params, &result)
 	return result, err
 }
 
 // GetStockKlines 获取股票批量历史K线
-func (c *Client) GetStockKlines(region string, codes []string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetStockKlines(region string, codes []string, kType, limit int, end *int64) (map[string][]Kline, error) {
+	result := map[string][]Kline{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 		"kType":  fmt.Sprintf("%d", kType),
 		"limit":  fmt.Sprintf("%d", limit),
 	}
@@ -408,8 +409,8 @@ func (c *Client) ConnectStockWebSocket() error {
 // 指数模块
 
 // GetIndicesTick 获取指数实时成交
-func (c *Client) GetIndicesTick(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetIndicesTick(region, code string) (Tick, error) {
+	result := Tick{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -419,8 +420,8 @@ func (c *Client) GetIndicesTick(region, code string) (interface{}, error) {
 }
 
 // GetIndicesQuote 获取指数实时报价
-func (c *Client) GetIndicesQuote(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetIndicesQuote(region, code string) (Quote, error) {
+	result := Quote{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -430,8 +431,8 @@ func (c *Client) GetIndicesQuote(region, code string) (interface{}, error) {
 }
 
 // GetIndicesDepth 获取指数实时盘口
-func (c *Client) GetIndicesDepth(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetIndicesDepth(region, code string) (Depth, error) {
+	result := Depth{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -441,8 +442,8 @@ func (c *Client) GetIndicesDepth(region, code string) (interface{}, error) {
 }
 
 // GetIndicesKline 获取指数历史K线
-func (c *Client) GetIndicesKline(region, code string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetIndicesKline(region, code string, kType, limit int, end *int64) ([]Kline, error) {
+	result := []Kline{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -457,44 +458,44 @@ func (c *Client) GetIndicesKline(region, code string, kType, limit int, end *int
 }
 
 // GetIndicesTicks 获取指数批量实时成交
-func (c *Client) GetIndicesTicks(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetIndicesTicks(region string, codes []string) (map[string]Tick, error) {
+	result := map[string]Tick{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/indices/ticks", params, &result)
 	return result, err
 }
 
 // GetIndicesQuotes 获取指数批量实时报价
-func (c *Client) GetIndicesQuotes(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetIndicesQuotes(region string, codes []string) (map[string]Quote, error) {
+	result := map[string]Quote{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/indices/quotes", params, &result)
 	return result, err
 }
 
 // GetIndicesDepths 获取指数批量实时盘口
-func (c *Client) GetIndicesDepths(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetIndicesDepths(region string, codes []string) (map[string]Depth, error) {
+	result := map[string]Depth{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/indices/depths", params, &result)
 	return result, err
 }
 
 // GetIndicesKlines 获取指数批量历史K线
-func (c *Client) GetIndicesKlines(region string, codes []string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetIndicesKlines(region string, codes []string, kType, limit int, end *int64) (map[string][]Kline, error) {
+	result := map[string][]Kline{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 		"kType":  fmt.Sprintf("%d", kType),
 		"limit":  fmt.Sprintf("%d", limit),
 	}
@@ -513,8 +514,8 @@ func (c *Client) ConnectIndicesWebSocket() error {
 // 期货模块
 
 // GetFutureTick 获取期货实时成交
-func (c *Client) GetFutureTick(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFutureTick(region, code string) (Tick, error) {
+	result := Tick{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -524,8 +525,8 @@ func (c *Client) GetFutureTick(region, code string) (interface{}, error) {
 }
 
 // GetFutureQuote 获取期货实时报价
-func (c *Client) GetFutureQuote(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFutureQuote(region, code string) (Quote, error) {
+	result := Quote{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -535,8 +536,8 @@ func (c *Client) GetFutureQuote(region, code string) (interface{}, error) {
 }
 
 // GetFutureDepth 获取期货实时盘口
-func (c *Client) GetFutureDepth(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFutureDepth(region, code string) (Depth, error) {
+	result := Depth{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -546,8 +547,8 @@ func (c *Client) GetFutureDepth(region, code string) (interface{}, error) {
 }
 
 // GetFutureKline 获取期货历史K线
-func (c *Client) GetFutureKline(region, code string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFutureKline(region, code string, kType, limit int, end *int64) ([]Kline, error) {
+	result := []Kline{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -562,44 +563,44 @@ func (c *Client) GetFutureKline(region, code string, kType, limit int, end *int6
 }
 
 // GetFutureTicks 获取期货批量实时成交
-func (c *Client) GetFutureTicks(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFutureTicks(region string, codes []string) (map[string]Tick, error) {
+	result := map[string]Tick{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/future/ticks", params, &result)
 	return result, err
 }
 
 // GetFutureQuotes 获取期货批量实时报价
-func (c *Client) GetFutureQuotes(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFutureQuotes(region string, codes []string) (map[string]Quote, error) {
+	result := map[string]Quote{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/future/quotes", params, &result)
 	return result, err
 }
 
 // GetFutureDepths 获取期货批量实时盘口
-func (c *Client) GetFutureDepths(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFutureDepths(region string, codes []string) (map[string]Depth, error) {
+	result := map[string]Depth{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/future/depths", params, &result)
 	return result, err
 }
 
 // GetFutureKlines 获取期货批量历史K线
-func (c *Client) GetFutureKlines(region string, codes []string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFutureKlines(region string, codes []string, kType, limit int, end *int64) (map[string][]Kline, error) {
+	result := map[string][]Kline{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 		"kType":  fmt.Sprintf("%d", kType),
 		"limit":  fmt.Sprintf("%d", limit),
 	}
@@ -618,8 +619,8 @@ func (c *Client) ConnectFutureWebSocket() error {
 // 基金模块
 
 // GetFundTick 获取基金实时成交
-func (c *Client) GetFundTick(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFundTick(region, code string) (Tick, error) {
+	result := Tick{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -629,8 +630,8 @@ func (c *Client) GetFundTick(region, code string) (interface{}, error) {
 }
 
 // GetFundQuote 获取基金实时报价
-func (c *Client) GetFundQuote(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFundQuote(region, code string) (Quote, error) {
+	result := Quote{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -640,8 +641,8 @@ func (c *Client) GetFundQuote(region, code string) (interface{}, error) {
 }
 
 // GetFundDepth 获取基金实时盘口
-func (c *Client) GetFundDepth(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFundDepth(region, code string) (Depth, error) {
+	result := Depth{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -651,8 +652,8 @@ func (c *Client) GetFundDepth(region, code string) (interface{}, error) {
 }
 
 // GetFundKline 获取基金历史K线
-func (c *Client) GetFundKline(region, code string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFundKline(region, code string, kType, limit int, end *int64) ([]Kline, error) {
+	result := []Kline{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -667,44 +668,44 @@ func (c *Client) GetFundKline(region, code string, kType, limit int, end *int64)
 }
 
 // GetFundTicks 获取基金批量实时成交
-func (c *Client) GetFundTicks(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFundTicks(region string, codes []string) (map[string]Tick, error) {
+	result := map[string]Tick{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/fund/ticks", params, &result)
 	return result, err
 }
 
 // GetFundQuotes 获取基金批量实时报价
-func (c *Client) GetFundQuotes(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFundQuotes(region string, codes []string) (map[string]Quote, error) {
+	result := map[string]Quote{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/fund/quotes", params, &result)
 	return result, err
 }
 
 // GetFundDepths 获取基金批量实时盘口
-func (c *Client) GetFundDepths(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFundDepths(region string, codes []string) (map[string]Depth, error) {
+	result := map[string]Depth{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/fund/depths", params, &result)
 	return result, err
 }
 
 // GetFundKlines 获取基金批量历史K线
-func (c *Client) GetFundKlines(region string, codes []string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetFundKlines(region string, codes []string, kType, limit int, end *int64) (map[string][]Kline, error) {
+	result := map[string][]Kline{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 		"kType":  fmt.Sprintf("%d", kType),
 		"limit":  fmt.Sprintf("%d", limit),
 	}
@@ -723,8 +724,8 @@ func (c *Client) ConnectFundWebSocket() error {
 // 外汇模块
 
 // GetForexTick 获取外汇实时成交
-func (c *Client) GetForexTick(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetForexTick(region, code string) (Tick, error) {
+	result := Tick{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -734,8 +735,8 @@ func (c *Client) GetForexTick(region, code string) (interface{}, error) {
 }
 
 // GetForexQuote 获取外汇实时报价
-func (c *Client) GetForexQuote(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetForexQuote(region, code string) (Quote, error) {
+	result := Quote{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -745,8 +746,8 @@ func (c *Client) GetForexQuote(region, code string) (interface{}, error) {
 }
 
 // GetForexDepth 获取外汇实时盘口
-func (c *Client) GetForexDepth(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetForexDepth(region, code string) (Depth, error) {
+	result := Depth{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -756,8 +757,8 @@ func (c *Client) GetForexDepth(region, code string) (interface{}, error) {
 }
 
 // GetForexKline 获取外汇历史K线
-func (c *Client) GetForexKline(region, code string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetForexKline(region, code string, kType, limit int, end *int64) ([]Kline, error) {
+	result := []Kline{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -772,44 +773,44 @@ func (c *Client) GetForexKline(region, code string, kType, limit int, end *int64
 }
 
 // GetForexTicks 获取外汇批量实时成交
-func (c *Client) GetForexTicks(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetForexTicks(region string, codes []string) (map[string]Tick, error) {
+	result := map[string]Tick{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/forex/ticks", params, &result)
 	return result, err
 }
 
 // GetForexQuotes 获取外汇批量实时报价
-func (c *Client) GetForexQuotes(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetForexQuotes(region string, codes []string) (map[string]Quote, error) {
+	result := map[string]Quote{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/forex/quotes", params, &result)
 	return result, err
 }
 
 // GetForexDepths 获取外汇批量实时盘口
-func (c *Client) GetForexDepths(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetForexDepths(region string, codes []string) (map[string]Depth, error) {
+	result := map[string]Depth{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/forex/depths", params, &result)
 	return result, err
 }
 
 // GetForexKlines 获取外汇批量历史K线
-func (c *Client) GetForexKlines(region string, codes []string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetForexKlines(region string, codes []string, kType, limit int, end *int64) (map[string][]Kline, error) {
+	result := map[string][]Kline{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 		"kType":  fmt.Sprintf("%d", kType),
 		"limit":  fmt.Sprintf("%d", limit),
 	}
@@ -828,8 +829,8 @@ func (c *Client) ConnectForexWebSocket() error {
 // 加密货币模块
 
 // GetCryptoTick 获取加密货币实时成交
-func (c *Client) GetCryptoTick(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetCryptoTick(region, code string) (Tick, error) {
+	result := Tick{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -839,8 +840,8 @@ func (c *Client) GetCryptoTick(region, code string) (interface{}, error) {
 }
 
 // GetCryptoQuote 获取加密货币实时报价
-func (c *Client) GetCryptoQuote(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetCryptoQuote(region, code string) (Quote, error) {
+	result := Quote{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -850,8 +851,8 @@ func (c *Client) GetCryptoQuote(region, code string) (interface{}, error) {
 }
 
 // GetCryptoDepth 获取加密货币实时盘口
-func (c *Client) GetCryptoDepth(region, code string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetCryptoDepth(region, code string) (Depth, error) {
+	result := Depth{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -861,8 +862,8 @@ func (c *Client) GetCryptoDepth(region, code string) (interface{}, error) {
 }
 
 // GetCryptoKline 获取加密货币历史K线
-func (c *Client) GetCryptoKline(region, code string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetCryptoKline(region, code string, kType, limit int, end *int64) ([]Kline, error) {
+	result := []Kline{}
 	params := map[string]string{
 		"region": region,
 		"code":   code,
@@ -877,44 +878,44 @@ func (c *Client) GetCryptoKline(region, code string, kType, limit int, end *int6
 }
 
 // GetCryptoTicks 获取加密货币批量实时成交
-func (c *Client) GetCryptoTicks(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetCryptoTicks(region string, codes []string) (map[string]Tick, error) {
+	result := map[string]Tick{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/crypto/ticks", params, &result)
 	return result, err
 }
 
 // GetCryptoQuotes 获取加密货币批量实时报价
-func (c *Client) GetCryptoQuotes(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetCryptoQuotes(region string, codes []string) (map[string]Quote, error) {
+	result := map[string]Quote{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/crypto/quotes", params, &result)
 	return result, err
 }
 
 // GetCryptoDepths 获取加密货币批量实时盘口
-func (c *Client) GetCryptoDepths(region string, codes []string) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetCryptoDepths(region string, codes []string) (map[string]Depth, error) {
+	result := map[string]Depth{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 	}
 	err := c.get("/crypto/depths", params, &result)
 	return result, err
 }
 
 // GetCryptoKlines 获取加密货币批量历史K线
-func (c *Client) GetCryptoKlines(region string, codes []string, kType, limit int, end *int64) (interface{}, error) {
-	var result interface{}
+func (c *Client) GetCryptoKlines(region string, codes []string, kType, limit int, end *int64) (map[string][]Kline, error) {
+	result := map[string][]Kline{}
 	params := map[string]string{
 		"region": region,
-		"codes":  fmt.Sprintf("%v", codes),
+		"codes":  strings.Join(codes, ","),
 		"kType":  fmt.Sprintf("%d", kType),
 		"limit":  fmt.Sprintf("%d", limit),
 	}
