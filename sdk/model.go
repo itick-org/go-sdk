@@ -51,3 +51,8 @@ type Kline struct {
 	L  float64 `json:"l"`
 	O  float64 `json:"o"`
 }
+
+type WssSubSymbols struct {
+	Symbols map[string]bool `json:"symbols"`
+	Types   map[string]bool `json:"types"`
+}

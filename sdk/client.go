@@ -21,17 +21,22 @@ const (
 	MaxReconnectAttempts = 10
 )
 
+var reconnectLimiter = time.Tick(ReconnectInterval)
+
 type Client struct {
-	token          string
-	client         *http.Client
-	wsClient       *websocket.Conn
-	wsPath         string
-	wsConnected    bool
-	wsMutex        sync.Mutex
-	reconnectChan  chan struct{}
-	closeChan      chan struct{}
-	messageHandler func([]byte)
-	errorHandler   func(error)
+	token            string
+	client           *http.Client
+	wsClient         *websocket.Conn
+	wsPath           string
+	wsConnected      bool
+	wsMutex          sync.Mutex
+	reconnectChan    chan struct{}
+	closeChan        chan struct{}
+	messageHandler   func([]byte)
+	errorHandler     func(error)
+	reconnectHandler func()
+	readLoopRunning  bool
+	wssSubSymbols    WssSubSymbols
 }
 
 type Response struct {
@@ -41,14 +46,22 @@ type Response struct {
 }
 
 func NewClient(token string) *Client {
-	return &Client{
+	c := &Client{
 		token: token,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 		reconnectChan: make(chan struct{}),
 		closeChan:     make(chan struct{}),
+		wssSubSymbols: WssSubSymbols{
+			Symbols: map[string]bool{},
+			Types:   map[string]bool{},
+		},
 	}
+
+	go c.reconnectLoop()
+
+	return c
 }
 
 func (c *Client) get(path string, params map[string]string, result interface{}) error {
@@ -104,15 +117,91 @@ func (c *Client) SetErrorHandler(handler func(error)) {
 	c.errorHandler = handler
 }
 
+// SetReconnectHandler sets the callback for successful reconnection
+func (c *Client) SetReconnectHandler(handler func()) {
+	c.reconnectHandler = handler
+}
+
 // ConnectWebSocket establishes a WebSocket connection with automatic reconnection
 func (c *Client) ConnectWebSocket(path string) error {
 	c.wsPath = path
-	return c.connectWebSocket()
+	err := c.connectWebSocket()
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
+func (c *Client) Subscribe(symbols []string, types []string) error {
+
+	// Check if symbols are already subscribed
+	subSymbols := []string{}
+	subTypes := []string{}
+	if len(symbols) > 0 {
+		for _, symbol := range symbols {
+			if c.wssSubSymbols.Symbols[symbol] {
+				continue
+			}
+			c.wssSubSymbols.Symbols[symbol] = true
+			subSymbols = append(subSymbols, symbol)
+		}
+	} else {
+		for symbol := range c.wssSubSymbols.Symbols {
+			subSymbols = append(subSymbols, symbol)
+		}
+	}
+	if len(types) > 0 {
+		for _, type_ := range types {
+			if c.wssSubSymbols.Types[type_] {
+				continue
+			}
+			c.wssSubSymbols.Types[type_] = true
+		}
+	}
+
+	for type_ := range c.wssSubSymbols.Types {
+		subTypes = append(subTypes, type_)
+	}
+
+	subStr := fmt.Sprintf(`{"ac": "subscribe", "params": "%s","types":"%s"}`, strings.Join(subSymbols, ","), strings.Join(subTypes, ","))
+
+	subscribeMsg := []byte(subStr)
+
+	err := c.SendWebSocketMessage(subscribeMsg)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *Client) ClearSubcribe() {
+	c.wssSubSymbols = WssSubSymbols{
+		Symbols: map[string]bool{},
+		Types:   map[string]bool{},
+	}
+}
+
+func (c *Client) GetSubcribe() ([]string, []string) {
+	symbols := []string{}
+	types := []string{}
+	for symbol := range c.wssSubSymbols.Symbols {
+		symbols = append(symbols, symbol)
+	}
+	for type_ := range c.wssSubSymbols.Types {
+		types = append(types, type_)
+	}
+	return symbols, types
+}
 func (c *Client) connectWebSocket() error {
 	c.wsMutex.Lock()
 	defer c.wsMutex.Unlock()
+
+	// Close existing connection if any
+	if c.wsClient != nil {
+		c.wsClient.Close()
+		c.wsClient = nil
+	}
+	c.wsConnected = false
 
 	url := WSSURL + c.wsPath
 	conn, _, err := websocket.DefaultDialer.Dial(url, http.Header{
@@ -132,8 +221,6 @@ func (c *Client) connectWebSocket() error {
 	go c.pingLoop()
 	// Start read goroutine
 	go c.readLoop()
-	// Start reconnect goroutine
-	go c.reconnectLoop()
 
 	return nil
 }
@@ -161,32 +248,53 @@ func (c *Client) pingLoop() {
 }
 
 func (c *Client) readLoop() {
-	for {
-		c.wsMutex.Lock()
-		conn := c.wsClient
-		connected := c.wsConnected
+	// Check if another readLoop is already running
+	c.wsMutex.Lock()
+	if c.readLoopRunning {
 		c.wsMutex.Unlock()
+		return
+	}
+	c.readLoopRunning = true
+	c.wsMutex.Unlock()
 
-		if !connected || conn == nil {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
+	// Ensure flag is cleared when this readLoop exits
+	defer func() {
+		c.wsMutex.Lock()
+		c.readLoopRunning = false
+		c.wsMutex.Unlock()
+	}()
 
-		_, message, err := conn.ReadMessage()
-		if err != nil {
+	for {
+		select {
+		case <-c.closeChan:
+			return
+		default:
 			c.wsMutex.Lock()
-			c.wsConnected = false
+			conn := c.wsClient
+			connected := c.wsConnected
 			c.wsMutex.Unlock()
 
-			if c.errorHandler != nil {
-				c.errorHandler(err)
+			if !connected || conn == nil {
+				time.Sleep(100 * time.Millisecond)
+				continue
 			}
-			c.reconnectChan <- struct{}{}
-			continue
-		}
 
-		if c.messageHandler != nil {
-			c.messageHandler(message)
+			_, message, err := conn.ReadMessage()
+			if err != nil {
+				c.wsMutex.Lock()
+				c.wsConnected = false
+				c.wsMutex.Unlock()
+
+				if c.errorHandler != nil {
+					c.errorHandler(err)
+				}
+				c.reconnectChan <- struct{}{}
+				return
+			}
+
+			if c.messageHandler != nil {
+				c.messageHandler(message)
+			}
 		}
 	}
 }
@@ -204,12 +312,17 @@ func (c *Client) reconnectLoop() {
 				continue
 			}
 
-			time.Sleep(ReconnectInterval)
+			<-reconnectLimiter
 			err := c.connectWebSocket()
 			if err != nil {
 				reconnectAttempts++
 			} else {
 				reconnectAttempts = 0
+				if c.reconnectHandler != nil {
+					c.reconnectHandler()
+				} else {
+					c.Subscribe([]string{}, []string{})
+				}
 			}
 		case <-c.closeChan:
 			return
@@ -346,7 +459,7 @@ func (c *Client) GetStockKline(region, code string, kType, limit int, end *int64
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/stock/kline", params, &result)
 	return result, err
@@ -395,7 +508,7 @@ func (c *Client) GetStockKlines(region string, codes []string, kType, limit int,
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/stock/klines", params, &result)
 	return result, err
@@ -451,7 +564,7 @@ func (c *Client) GetIndicesKline(region, code string, kType, limit int, end *int
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/indices/kline", params, &result)
 	return result, err
@@ -500,7 +613,7 @@ func (c *Client) GetIndicesKlines(region string, codes []string, kType, limit in
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/indices/klines", params, &result)
 	return result, err
@@ -556,7 +669,7 @@ func (c *Client) GetFutureKline(region, code string, kType, limit int, end *int6
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/future/kline", params, &result)
 	return result, err
@@ -605,7 +718,7 @@ func (c *Client) GetFutureKlines(region string, codes []string, kType, limit int
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/future/klines", params, &result)
 	return result, err
@@ -661,7 +774,7 @@ func (c *Client) GetFundKline(region, code string, kType, limit int, end *int64)
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/fund/kline", params, &result)
 	return result, err
@@ -710,7 +823,7 @@ func (c *Client) GetFundKlines(region string, codes []string, kType, limit int, 
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/fund/klines", params, &result)
 	return result, err
@@ -766,7 +879,7 @@ func (c *Client) GetForexKline(region, code string, kType, limit int, end *int64
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/forex/kline", params, &result)
 	return result, err
@@ -815,7 +928,7 @@ func (c *Client) GetForexKlines(region string, codes []string, kType, limit int,
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/forex/klines", params, &result)
 	return result, err
@@ -871,7 +984,7 @@ func (c *Client) GetCryptoKline(region, code string, kType, limit int, end *int6
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/crypto/kline", params, &result)
 	return result, err
@@ -920,7 +1033,7 @@ func (c *Client) GetCryptoKlines(region string, codes []string, kType, limit int
 		"limit":  fmt.Sprintf("%d", limit),
 	}
 	if end != nil {
-		params["end"] = fmt.Sprintf("%d", *end)
+		params["et"] = fmt.Sprintf("%d", *end)
 	}
 	err := c.get("/crypto/klines", params, &result)
 	return result, err
