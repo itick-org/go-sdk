@@ -13,20 +13,35 @@ import (
 	"github.com/itick-org/go-sdk/sdk"
 )
 
+var token string = "8850*****************ee4127087"
+
 func main() {
+
+	// 测试 HTTP 接口
+	test_http()
+
+	// 测试 WebSocket 连接
+	sdk.StartGlobalReconnect()
+	// close global reconnect
+	defer sdk.CloseGlobalReconnect()
+	for i := 0; i < 10; i++ {
+		test_websocket(fmt.Sprintf("client-wss-%d", i))
+	}
+
+	// Wait for interrupt signal to gracefully close
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+	fmt.Println("Waiting for WebSocket messages... Press Ctrl+C to exit")
+	<-sigCh
+	//  停止全局重连
+	sdk.CloseGlobalReconnect()
+	fmt.Println("\nShutting down...")
+
+}
+
+func test_http() {
 	// 初始化客户端
-	token := "8850*****************ee4127087"
-	client := sdk.NewClient(token)
-
-	// 设置 WebSocket 消息处理器
-	client.SetMessageHandler(func(message []byte) {
-		fmt.Printf("Received WebSocket message: %s\n", message)
-	})
-
-	// 设置 WebSocket 错误处理器
-	client.SetErrorHandler(func(err error) {
-		log.Printf("WebSocket error: %v\n", err)
-	})
+	client := sdk.NewClient(token, "client-http")
 
 	// 测试外汇实时成交接口
 	tick, err := client.GetForexTick("GB", "EURUSD")
@@ -91,25 +106,37 @@ func main() {
 	}
 	klinesBy, _ := json.Marshal(klines)
 	fmt.Printf("Forex Klines: %+v\n", string(klinesBy))
+}
 
-	// 测试 WebSocket 连接
-	err = client.ConnectCryptoWebSocket()
+func test_websocket(clientId string) {
+	client := sdk.NewClient(token, clientId)
+
+	// 设置 WebSocket 消息处理器
+	client.SetMessageHandler(func(message []byte) {
+		fmt.Printf("clientId:%s, Received WebSocket message: %s\n", clientId, message)
+	})
+
+	// 设置 WebSocket 错误处理器
+	client.SetErrorHandler(func(err error) {
+		log.Printf("clientId:%s WebSocket error: %v\n", clientId, err)
+	})
+
+	err := client.ConnectCryptoWebSocket()
 	if err != nil {
 		log.Printf("ConnectForexWebSocket error: %v", err)
 		// Continue even if WebSocket fails
 	} else {
-		defer client.CloseWebSocket()
+		// defer client.CloseWebSocket()
 
 		// 发送订阅消息
-		// subscribeMsg := []byte(`{"ac": "subscribe", "params": "BTCUSDT$ba","types":"quote,tick"}`)
 		err = client.Subscribe([]string{"BTCUSDT$ba"}, []string{"quote", "tick"})
 		if err != nil {
-			log.Printf("SendWebSocketMessage error: %v", err)
+			log.Printf("Subscribe error: %v", err)
 		}
 
 		err = client.Subscribe([]string{"ETHUSDT$ba"}, []string{"quote", "tick"})
 		if err != nil {
-			log.Printf("SendWebSocketMessage error: %v", err)
+			log.Printf("Subscribe error: %v", err)
 		}
 
 		// 等待接收消息
@@ -121,13 +148,6 @@ func main() {
 
 		symbols, types := client.GetSubcribe()
 		fmt.Printf("GetSubcribe: %s ,%s\n", strings.Join(symbols, ","), strings.Join(types, ","))
-
-		// Wait for interrupt signal to gracefully close
-		sigCh := make(chan os.Signal, 1)
-		signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
-		fmt.Println("Waiting for WebSocket messages... Press Ctrl+C to exit")
-		<-sigCh
-		fmt.Println("\nShutting down...")
 
 	}
 }

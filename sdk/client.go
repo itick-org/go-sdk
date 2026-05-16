@@ -1,11 +1,13 @@
 package sdk
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -13,30 +15,45 @@ import (
 
 const (
 	BaseURL = "https://api.itick.org"
-	WSSURL  = "wss://api.itick.org"
+	WSSURL  = "wss://api-free.itick.org"
 
 	// WebSocket constants
-	PingInterval         = 30 * time.Second
-	ReconnectInterval    = 5 * time.Second
-	MaxReconnectAttempts = 10
+	PingInterval      = 30 * time.Second
+	ReconnectInterval = 3 * time.Second // 修改为3秒
 )
 
-var reconnectLimiter = time.Tick(ReconnectInterval)
+// 全局重连限制器，确保所有client共享同一个节流器
+var (
+	reconnectLimiter <-chan time.Time
+	reconnectQueue   = make(chan *Client, 1000) // 重连队列，最多允许10个客户端等待重连
+	globalCloseChan  = make(chan struct{})
+	reconnectMutex   sync.Mutex // 保护重连过程的互斥锁
+)
 
 type Client struct {
-	token            string
-	client           *http.Client
-	wsClient         *websocket.Conn
-	wsPath           string
-	wsConnected      bool
-	wsMutex          sync.Mutex
-	reconnectChan    chan struct{}
-	closeChan        chan struct{}
+	Id     string
+	token  string
+	client *http.Client
+	wsPath string
+
+	wsClient *websocket.Conn
+
+	reconnectChan chan struct{}
+	closeChan     chan struct{}
+
 	messageHandler   func([]byte)
 	errorHandler     func(error)
 	reconnectHandler func()
-	readLoopRunning  bool
-	wssSubSymbols    WssSubSymbols
+
+	wssSubSymbols WssSubSymbols
+
+	reconnectAttempts atomic.Int64
+	isClose           atomic.Bool
+	wsConnected       atomic.Bool
+	readLoopRunning   atomic.Bool
+
+	wsPingMutex    sync.Mutex
+	wsConnectMutex sync.Mutex
 }
 
 type Response struct {
@@ -45,8 +62,9 @@ type Response struct {
 	Data interface{} `json:"data"`
 }
 
-func NewClient(token string) *Client {
+func NewClient(token string, id string) *Client {
 	c := &Client{
+		Id:    id,
 		token: token,
 		client: &http.Client{
 			Timeout: 10 * time.Second,
@@ -57,7 +75,17 @@ func NewClient(token string) *Client {
 			Symbols: map[string]bool{},
 			Types:   map[string]bool{},
 		},
+
+		reconnectAttempts: atomic.Int64{},
+		isClose:           atomic.Bool{},
+		wsConnected:       atomic.Bool{},
+		readLoopRunning:   atomic.Bool{},
 	}
+
+	c.reconnectAttempts.Store(0)
+	c.isClose.Store(false)
+	c.wsConnected.Store(false)
+	c.readLoopRunning.Store(false)
 
 	go c.reconnectLoop()
 
@@ -193,18 +221,29 @@ func (c *Client) GetSubcribe() ([]string, []string) {
 	return symbols, types
 }
 func (c *Client) connectWebSocket() error {
-	c.wsMutex.Lock()
-	defer c.wsMutex.Unlock()
+	c.wsConnectMutex.Lock()
+	defer c.wsConnectMutex.Unlock()
 
 	// Close existing connection if any
 	if c.wsClient != nil {
 		c.wsClient.Close()
 		c.wsClient = nil
 	}
-	c.wsConnected = false
+	c.wsConnected.Store(false)
 
 	url := WSSURL + c.wsPath
-	conn, _, err := websocket.DefaultDialer.Dial(url, http.Header{
+
+	dialer := websocket.Dialer{
+		HandshakeTimeout: 30 * time.Second, // 设置握手超时时间为30秒
+		ReadBufferSize:   1024,
+		WriteBufferSize:  1024,
+	}
+
+	// 使用带超时的上下文控制连接过程
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+
+	conn, _, err := dialer.DialContext(ctx, url, http.Header{
 		"token": []string{c.token},
 	})
 	if err != nil {
@@ -215,7 +254,7 @@ func (c *Client) connectWebSocket() error {
 	}
 
 	c.wsClient = conn
-	c.wsConnected = true
+	c.wsConnected.Store(true)
 
 	// Start ping goroutine
 	go c.pingLoop()
@@ -232,15 +271,16 @@ func (c *Client) pingLoop() {
 	for {
 		select {
 		case <-ticker.C:
-			c.wsMutex.Lock()
-			if c.wsClient != nil && c.wsConnected {
+			c.wsPingMutex.Lock()
+			if c.wsClient != nil && c.wsConnected.Load() {
+				c.wsClient.SetWriteDeadline(time.Now().Add(20 * time.Second))
 				err := c.wsClient.WriteMessage(websocket.PingMessage, []byte{})
 				if err != nil {
-					c.wsConnected = false
+					c.wsConnected.Store(false)
 					c.reconnectChan <- struct{}{}
 				}
 			}
-			c.wsMutex.Unlock()
+			c.wsPingMutex.Unlock()
 		case <-c.closeChan:
 			return
 		}
@@ -249,19 +289,13 @@ func (c *Client) pingLoop() {
 
 func (c *Client) readLoop() {
 	// Check if another readLoop is already running
-	c.wsMutex.Lock()
-	if c.readLoopRunning {
-		c.wsMutex.Unlock()
+	if !c.readLoopRunning.CompareAndSwap(false, true) {
 		return
 	}
-	c.readLoopRunning = true
-	c.wsMutex.Unlock()
 
 	// Ensure flag is cleared when this readLoop exits
 	defer func() {
-		c.wsMutex.Lock()
-		c.readLoopRunning = false
-		c.wsMutex.Unlock()
+		c.readLoopRunning.Store(false)
 	}()
 
 	for {
@@ -269,10 +303,8 @@ func (c *Client) readLoop() {
 		case <-c.closeChan:
 			return
 		default:
-			c.wsMutex.Lock()
 			conn := c.wsClient
-			connected := c.wsConnected
-			c.wsMutex.Unlock()
+			connected := c.wsConnected.Load()
 
 			if !connected || conn == nil {
 				time.Sleep(100 * time.Millisecond)
@@ -281,9 +313,7 @@ func (c *Client) readLoop() {
 
 			_, message, err := conn.ReadMessage()
 			if err != nil {
-				c.wsMutex.Lock()
-				c.wsConnected = false
-				c.wsMutex.Unlock()
+				c.wsConnected.Store(false)
 
 				if c.errorHandler != nil {
 					c.errorHandler(err)
@@ -300,29 +330,21 @@ func (c *Client) readLoop() {
 }
 
 func (c *Client) reconnectLoop() {
-	reconnectAttempts := 0
-
 	for {
 		select {
 		case <-c.reconnectChan:
-			if reconnectAttempts >= MaxReconnectAttempts {
-				if c.errorHandler != nil {
-					c.errorHandler(fmt.Errorf("max reconnect attempts reached"))
-				}
-				continue
-			}
 
-			<-reconnectLimiter
-			err := c.connectWebSocket()
-			if err != nil {
-				reconnectAttempts++
-			} else {
-				reconnectAttempts = 0
-				if c.reconnectHandler != nil {
-					c.reconnectHandler()
-				} else {
-					c.Subscribe([]string{}, []string{})
+			// 将客户端加入重连队列
+			select {
+			case reconnectQueue <- c:
+				// 成功加入队列
+			default:
+				// 队列满了，丢弃最早的重连请求
+				select {
+				case <-reconnectQueue:
+				default:
 				}
+				reconnectQueue <- c
 			}
 		case <-c.closeChan:
 			return
@@ -330,11 +352,57 @@ func (c *Client) reconnectLoop() {
 	}
 }
 
-func (c *Client) SendWebSocketMessage(message []byte) error {
-	c.wsMutex.Lock()
-	defer c.wsMutex.Unlock()
+// processReconnectQueue 处理重连队列中的客户端
+func processReconnectQueue() {
+	for {
+		// 从队列中取出一个等待重连的客户端
+		client := <-reconnectQueue
 
-	if !c.wsConnected || c.wsClient == nil {
+		// 三秒重连一次
+		select {
+		case <-globalCloseChan:
+			return
+		case <-reconnectLimiter:
+
+			// 使用互斥锁确保同时只有一个客户端在重连
+			reconnectMutex.Lock()
+			if !client.isClose.Load() {
+				err := client.connectWebSocket()
+				if err != nil {
+					client.reconnectAttempts.Add(1) // 注意：这需要在Client结构体中添加此字段
+					// 加入队列，等待下次重连
+					reconnectQueue <- client
+				} else {
+					client.reconnectAttempts.Store(0)
+					if client.reconnectHandler != nil {
+						client.reconnectHandler()
+					} else {
+						client.Subscribe([]string{}, []string{})
+					}
+				}
+			}
+			reconnectMutex.Unlock()
+		case <-time.After(ReconnectInterval + 5*time.Second): // 超时保护
+			// 避免无限期等待
+			continue
+		}
+	}
+}
+
+// 开启全局重连
+func StartGlobalReconnect() {
+	reconnectLimiter = time.Tick(ReconnectInterval)
+	go processReconnectQueue()
+}
+
+// 关闭全局重连
+func CloseGlobalReconnect() {
+	close(globalCloseChan)
+}
+
+func (c *Client) SendWebSocketMessage(message []byte) error {
+
+	if !c.wsConnected.Load() || c.wsClient == nil {
 		return fmt.Errorf("websocket not connected")
 	}
 
@@ -342,27 +410,23 @@ func (c *Client) SendWebSocketMessage(message []byte) error {
 }
 
 func (c *Client) CloseWebSocket() error {
-	c.wsMutex.Lock()
-	defer c.wsMutex.Unlock()
-
 	close(c.closeChan)
-
-	if c.wsClient == nil {
+	wsC := c.wsClient
+	if wsC == nil {
 		return nil
 	}
 
 	err := c.wsClient.Close()
-	c.wsConnected = false
+	c.wsConnected.Store(false)
 	c.wsClient = nil
+	c.isClose.Store(true)
 
 	return err
 }
 
 // IsWebSocketConnected returns the current WebSocket connection status
 func (c *Client) IsWebSocketConnected() bool {
-	c.wsMutex.Lock()
-	defer c.wsMutex.Unlock()
-	return c.wsConnected
+	return c.wsConnected.Load()
 }
 
 // 基础模块
