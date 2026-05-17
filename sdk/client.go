@@ -15,7 +15,7 @@ import (
 
 const (
 	BaseURL = "https://api.itick.org"
-	WSSURL  = "wss://api-free.itick.org"
+	WSSURL  = "wss://api.itick.org"
 
 	// WebSocket constants
 	PingInterval      = 30 * time.Second
