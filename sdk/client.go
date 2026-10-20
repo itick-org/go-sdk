@@ -14,8 +14,8 @@ import (
 )
 
 const (
-	BaseURL = "https://api.itick.org"
-	WSSURL  = "wss://api.itick.org"
+	BASE_URL = "https://api.itick.org"
+	WSS_URL  = "wss://api.itick.org"
 
 	// WebSocket constants
 	PingInterval      = 30 * time.Second
@@ -31,8 +31,12 @@ var (
 )
 
 type Client struct {
-	Id     string
-	token  string
+	Id    string
+	token string
+
+	BaseURL string
+	WssUrl  string
+
 	client *http.Client
 	wsPath string
 
@@ -66,6 +70,10 @@ func NewClient(token string, id string) *Client {
 	c := &Client{
 		Id:    id,
 		token: token,
+
+		BaseURL: BASE_URL,
+		WssUrl:  WSS_URL,
+
 		client: &http.Client{
 			Timeout: 10 * time.Second,
 		},
@@ -93,7 +101,7 @@ func NewClient(token string, id string) *Client {
 }
 
 func (c *Client) get(path string, params map[string]string, result interface{}) error {
-	url := BaseURL + path
+	url := c.BaseURL + path
 	if len(params) > 0 {
 		url += "?"
 		for k, v := range params {
@@ -231,7 +239,7 @@ func (c *Client) connectWebSocket() error {
 	}
 	c.wsConnected.Store(false)
 
-	url := WSSURL + c.wsPath
+	url := c.WssUrl + c.wsPath
 
 	dialer := websocket.Dialer{
 		HandshakeTimeout: 30 * time.Second, // 设置握手超时时间为30秒
